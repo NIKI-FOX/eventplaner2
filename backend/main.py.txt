@@ -1,0 +1,251 @@
+import os
+import time
+import uuid
+from datetime import datetime
+from pathlib import Path
+
+# Third-party library, install with: pip install ics
+from ics import Calendar, Event
+
+# --- Constants ---
+CALENDARS_DIR = Path('calendars')
+DATE_FORMAT = "%Y-%m-%d %H:%M"
+
+# --- Helper Functions ---
+
+def clear_screen():
+    """Clears the terminal screen."""
+    os.system('cls' if os.name == 'nt' else 'clear')
+
+def display_header(title):
+    """Displays a formatted header."""
+    clear_screen()
+    print("=" * 60)
+    print(f"{title:^60}")
+    print("=" * 60)
+    print()
+
+def ensure_calendars_dir():
+    """Creates the calendars directory if it doesn't exist."""
+    CALENDARS_DIR.mkdir(exist_ok=True)
+
+def get_calendars():
+    """Returns a list of available calendar names."""
+    return sorted([f.stem for f in CALENDARS_DIR.glob('*.ics')])
+
+def select_or_create_calendar():
+    """
+    Displays a menu for the user to select an existing calendar or create a new one.
+    Returns the name of the calendar (without .ics) or None if the user cancels.
+    """
+    display_header("Select or Create a Calendar")
+    calendars = get_calendars()
+    
+    if calendars:
+        print("Available Calendars:")
+        for i, name in enumerate(calendars, 1):
+            print(f"  {i}. {name}")
+    else:
+        print("No calendars found. Let's create your first one!")
+
+    print("\nOptions:")
+    print("  Enter a number to select a calendar.")
+    print("  Enter a new name to create a new calendar.")
+    print("  Type '0' or press Enter to cancel.")
+    
+    choice = input("\nYour choice: ").strip()
+
+    if not choice or choice == '0':
+        return None
+    
+    try:
+        # Check if it's a number for selection
+        choice_num = int(choice)
+        if 1 <= choice_num <= len(calendars):
+            return calendars[choice_num - 1]
+        else:
+            print("Invalid number. Please try again.")
+            time.sleep(2)
+            return select_or_create_calendar()
+    except ValueError:
+        # It's a string, so treat it as a new calendar name
+        return choice
+
+# --- Main Feature Functions ---
+
+def list_events():
+    """Displays all upcoming events from a selected calendar."""
+    calendar_name = select_or_create_calendar()
+    if not calendar_name:
+        return
+
+    display_header(f"Upcoming Events in '{calendar_name}'")
+    
+    calendar_file = CALENDARS_DIR / f"{calendar_name}.ics"
+    if not calendar_file.exists():
+        print(f"Calendar '{calendar_name}' is new and has no events.")
+        print('Select "Add New Event" to get started!')
+        return
+
+    try:
+        with open(calendar_file, 'r') as f:
+            c = Calendar(f.read())
+    except Exception as e:
+        print(f"Error reading calendar file: {e}")
+        return
+
+    # Filter for events that haven't passed and sort them
+    now = datetime.now().astimezone()
+    upcoming_events = sorted([e for e in c.events if e.begin > now], key=lambda e: e.begin)
+    
+    if not upcoming_events:
+        print(f"No upcoming events found in '{calendar_name}'.")
+        return
+
+    for i, event in enumerate(upcoming_events, 1):
+        print(f"--- Event {i}: {event.name} ---")
+        # Format datetime with timezone for clarity
+        local_time = event.begin.astimezone()
+        print(f"  Date: {local_time.strftime('%A, %B %d, %Y at %I:%M %p %Z')}")
+        
+        countdown = event.begin - now
+        days = countdown.days
+        hours, remainder = divmod(countdown.seconds, 3600)
+        minutes, _ = divmod(remainder, 60)
+        
+        print(f"  Time Left: {days}d {hours}h {minutes}m")
+        print("-" * (len(event.name) + 16))
+        print()
+
+
+def add_event():
+    """Adds a new event to a selected calendar."""
+    calendar_name = select_or_create_calendar()
+    if not calendar_name:
+        return
+
+    display_header(f"Add New Event to '{calendar_name}'")
+    
+    event_name = input("Enter event name: ").strip()
+    if not event_name:
+        print("\nEvent name cannot be empty.")
+        return
+
+    while True:
+        date_str = input("Enter event date (YYYY-MM-DD): ").strip()
+        time_str = input("Enter event time (HH:MM, 24-hour format): ").strip()
+        full_date_str = f"{date_str} {time_str}"
+        try:
+            event_datetime = datetime.strptime(full_date_str, DATE_FORMAT)
+            if event_datetime <= datetime.now():
+                print("\nError: Event date and time must be in the future.")
+            else:
+                break
+        except ValueError:
+            print("Invalid date/time format. Please use YYYY-MM-DD and HH:MM.")
+
+    calendar_file = CALENDARS_DIR / f"{calendar_name}.ics"
+    c = Calendar()
+    if calendar_file.exists():
+        try:
+            with open(calendar_file, 'r') as f:
+                c = Calendar(f.read())
+        except Exception as e:
+            print(f"Could not read existing calendar. Starting fresh. Error: {e}")
+
+    new_event = Event()
+    new_event.name = event_name
+    new_event.begin = event_datetime
+    new_event.uid = str(uuid.uuid4()) # Unique ID for calendar compatibility
+    
+    c.events.add(new_event)
+
+    with open(calendar_file, 'w') as f:
+        f.write(str(c))
+    
+    print(f"\nSuccessfully added '{event_name}' to calendar '{calendar_name}'.")
+
+def delete_event():
+    """Deletes an existing event from a selected calendar."""
+    calendar_name = select_or_create_calendar()
+    if not calendar_name:
+        return
+
+    display_header(f"Delete Event from '{calendar_name}'")
+    
+    calendar_file = CALENDARS_DIR / f"{calendar_name}.ics"
+    if not calendar_file.exists():
+        print("Calendar is empty. Nothing to delete.")
+        return
+
+    with open(calendar_file, 'r') as f:
+        c = Calendar(f.read())
+
+    now = datetime.now().astimezone()
+    events_list = sorted(list(c.events), key=lambda e: e.begin)
+
+    if not events_list:
+        print("Calendar is empty. Nothing to delete.")
+        return
+    
+    print("Select an event to delete:")
+    for i, event in enumerate(events_list, 1):
+        status = " (Past)" if event.begin < now else ""
+        print(f"  {i}. {event.name} ({event.begin.astimezone().strftime('%Y-%m-%d %H:%M')}){status}")
+    
+    print()
+
+    try:
+        choice_str = input("Enter the number of the event to delete (or 0 to cancel): ")
+        choice = int(choice_str)
+        if choice == 0:
+            print("Deletion cancelled.")
+            return
+        if 0 < choice <= len(events_list):
+            event_to_delete = events_list[choice - 1]
+            c.events.remove(event_to_delete)
+            with open(calendar_file, 'w') as f:
+                f.write(str(c))
+            print(f"\nSuccessfully deleted event: '{event_to_delete.name}'")
+        else:
+            print("Invalid number. Please try again.")
+    except (ValueError, IndexError):
+        print("Invalid input. Please enter a valid number from the list.")
+
+# --- Main Application Loop ---
+
+def main():
+    """The main function to run the application."""
+    ensure_calendars_dir()
+    while True:
+        clear_screen()
+        print("=" * 60)
+        print(f"{'Event Countdown Planner (iCalendar Edition)':^60}")
+        print("=" * 60)
+        print("\nMenu:")
+        print("  1. List Upcoming Events")
+        print("  2. Add New Event")
+        print("  3. Delete Event")
+        print("  4. Exit")
+        print()
+
+        choice = input("Select an option (1-4): ").strip()
+
+        if choice == '1':
+            list_events()
+        elif choice == '2':
+            add_event()
+        elif choice == '3':
+            delete_event()
+        elif choice == '4':
+            print("Goodbye!")
+            break
+        else:
+            print("Invalid choice, please select a number from 1 to 4.")
+        
+        print("\nPress Enter to return to the menu...")
+        input()
+
+
+if __name__ == "__main__":
+    main()

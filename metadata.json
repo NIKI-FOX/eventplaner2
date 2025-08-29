@@ -1,0 +1,5 @@
+{
+  "name": "Event Countdown Planner",
+  "description": "A sleek and modern event countdown planner to track your upcoming important dates. Add events, see live countdowns, and manage your schedule with a beautiful, user-friendly interface. All data is saved locally in your browser.",
+  "requestFramePermissions": []
+}

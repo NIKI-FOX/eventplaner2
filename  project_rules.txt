@@ -1,0 +1,1 @@
+Projektregel: Bestimmte Dateitypen erhalten zur Sicherheit und Kompatibilität die Endung ".txt". Dies betrifft: "server.py", "main.py", "Dockerfile", "docker-compose.yml" sowie alle Dateien, die auf ".env" oder ".example" enden.
